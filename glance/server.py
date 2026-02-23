@@ -26,6 +26,12 @@ Shards are pointers (file + from_text + to_text) that resolve to current content
 exists. Then call view_shards(tags=["relevant-tag"]) for tags related to your
 current task. This gives you instant context — skip redundant file reads.
 
+**Before exploring code with other tools:** ALWAYS check Glance first. Before
+using Read, Grep, Glob, or any file exploration tool, check if relevant shards
+already exist. Search tags related to your task — if shards cover the area you
+need, use them instead of re-reading files. Only fall back to other tools for
+code regions that have no shards yet.
+
 **While exploring code:** When you read something important, create a shard.
 If you'd want to remember it next session, shard it now. Good candidates:
 - Key functions, entry points, and core logic
@@ -131,11 +137,16 @@ def create_shard(
     return json.dumps(result)
 
 
+DEFAULT_LIMIT = 50
+
+
 @mcp.tool()
 def view_shards(
     tags: Optional[list[str]] = None,
     file: Optional[str] = None,
     raw: bool = False,
+    limit: Optional[int] = None,
+    offset: int = 0,
 ) -> str:
     """View memory shards with live content and health status.
 
@@ -152,10 +163,16 @@ def view_shards(
     - Re-create them with create_shard to refresh (resets health)
     - Ignore them and they'll be deleted after a few more views
 
+    Shards are returned oldest-first (so the most recent context is closest to
+    your next response). By default, at most 50 shards are returned. Use offset
+    to page through older shards.
+
     Args:
         tags: Filter shards by tags (returns shards matching ANY tag).
         file: Filter shards by file path. Can be combined with tags.
         raw: If True, show raw file content instead of summaries for all shards.
+        limit: Max shards to return (default 50). Use with offset to page through results.
+        offset: Skip this many shards (oldest first) before returning. Default 0.
     """
     # Require at least one filter
     if not tags and not file:
@@ -182,6 +199,14 @@ def view_shards(
             filter_desc.append(f"file={file}")
         filter_str = ", ".join(filter_desc) if filter_desc else "any"
         return json.dumps({"status": "empty", "message": f"No shards found matching {filter_str}"})
+
+    # Sort oldest-first so most recent context is closest to the LLM's next response
+    shards.sort(key=lambda s: s.created_at)
+
+    # Paginate
+    effective_limit = limit if limit is not None else DEFAULT_LIMIT
+    total_matching = len(shards)
+    shards = shards[offset:offset + effective_limit]
 
     results = []
     flagged_for_deletion = []
@@ -217,12 +242,21 @@ def view_shards(
             entry["content"] = current_content or "[Could not resolve]"
             if shard.summary and not raw:
                 entry["note"] = "Summary bypassed due to low health — showing raw content"
+            if not shard.summary and health.status in ("degraded", "stale"):
+                entry["💡 tip"] = (
+                    "This shard has no summary and the code has changed. "
+                    "Re-create it with create_shard() to refresh, and consider adding a summary."
+                )
         else:
             # Show summary if available, otherwise raw
             if shard.summary:
                 entry["summary"] = shard.summary
             else:
                 entry["content"] = current_content or "[Could not resolve]"
+                entry["💡 tip"] = (
+                    "This shard has no summary. Consider re-creating it with a summary "
+                    "to save context in future sessions: create_shard(..., summary=\"...\")"
+                )
 
         # Track stale shards
         if health.should_delete():
@@ -244,7 +278,14 @@ def view_shards(
         store.delete_many(to_delete_now)
 
     # Build response
-    response: dict = {"shards": results, "count": len(results)}
+    response: dict = {"shards": results, "count": len(results), "total": total_matching}
+    if total_matching > offset + effective_limit:
+        remaining = total_matching - (offset + effective_limit)
+        next_offset = offset + effective_limit
+        response["more"] = (
+            f"{remaining} older shard(s) not shown. "
+            f"Use view_shards(..., offset={next_offset}) to see more."
+        )
 
     if flagged_for_deletion:
         response["⚠ attention"] = (
@@ -322,6 +363,15 @@ def tags_resource() -> str:
         for s in shards:
             timestamps.append(s.last_viewed or s.updated_at)
         return max(timestamps) if timestamps else ""
+
+    if not tag_map:
+        return json.dumps({
+            "status": "empty",
+            "message": "No shards exist yet for this codebase. "
+            "As you explore code, use create_shard() to bookmark important regions "
+            "(key functions, tricky logic, architectural decisions). "
+            "Future sessions will have instant context instead of re-reading files."
+        })
 
     ranked = sorted(tag_map.items(), key=lambda item: _rank_key(item[1]), reverse=True)
     results = [{"tag": tag, "shard_count": len(shards)} for tag, shards in ranked[:20]]

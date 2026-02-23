@@ -1,1 +1,4 @@
 __pycache__/
+
+# Glance memory shards
+.glance/

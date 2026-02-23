@@ -32,14 +32,27 @@ already exist. Search tags related to your task — if shards cover the area you
 need, use them instead of re-reading files. Only fall back to other tools for
 code regions that have no shards yet.
 
-**While exploring code:** When you read something important, create a shard.
-If you'd want to remember it next session, shard it now. Good candidates:
-- Key functions, entry points, and core logic
-- Non-obvious patterns, conventions, or architectural decisions
-- Tricky code that required effort to understand
-
 **When answering questions about code you've seen before:** Check your tags
 first, then view the relevant shards. Don't re-read files you already have shards for.
+
+## MANDATORY — Creating shards after exploration
+
+Exploration is not complete until you have created shards for what you found.
+This is not optional. Do not wait for the user to ask.
+
+After any code exploration (Read, Grep, Glob, or Task/Explore), you MUST:
+1. Identify key functions, entry points, patterns, and decisions discovered
+2. Call create_shard() for each important region BEFORE responding to the user
+3. Tag shards by feature/system (e.g. ["auth", "api"], ["storage", "upload"])
+4. Add summaries for complex code where your interpretation saves future context
+
+What to shard:
+- Every key function or entry point you read
+- Non-obvious patterns, conventions, or architectural decisions
+- Tricky code that required effort to understand
+- Configuration or setup that affects system behavior
+
+If you explored code and did not create any shards, you made an error.
 
 ## How it works
 - glance://tags resource: Shows top 20 tags by recent activity. Start here.
@@ -47,12 +60,6 @@ first, then view the relevant shards. Don't re-read files you already have shard
 - search_tags: Fuzzy search to discover tags by name.
 - create_shard: Bookmark a code region. Upserts on file+from_text match.
 - delete_tag: Remove a tag. Orphaned shards (no tags left) are deleted.
-
-## Tips
-- Use tags to organize by feature, system, or task
-- Add summaries for complex code where your interpretation saves future context
-- Skip summaries when the code speaks for itself
-- When view_shards shows stale shards, re-create them to refresh or let them expire
 """,
 )
 

@@ -335,8 +335,9 @@ def test_search_tags():
 
     # No match
     result = json.loads(search_tags("nonexistent"))
-    assert len(result) == 0
-    print("  ✓ search_tags('nonexistent') returns empty")
+    assert result["results"] == []
+    assert "IMPORTANT" in json.dumps(result)
+    print("  ✓ search_tags('nonexistent') returns empty with create_shard nudge")
 
     print()
 

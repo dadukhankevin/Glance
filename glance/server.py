@@ -198,7 +198,12 @@ def view_shards(
         if file:
             filter_desc.append(f"file={file}")
         filter_str = ", ".join(filter_desc) if filter_desc else "any"
-        return json.dumps({"status": "empty", "message": f"No shards found matching {filter_str}"})
+        return json.dumps({
+            "status": "empty",
+            "message": f"No shards found matching {filter_str}",
+            "⚠ IMPORTANT": "If you explore this area manually, you MUST call create_shard() "
+            "to save what you learn. Without shards, this knowledge is lost when the session ends."
+        })
 
     # Sort oldest-first so most recent context is closest to the LLM's next response
     shards.sort(key=lambda s: s.created_at)
@@ -331,6 +336,16 @@ def search_tags(query: str) -> str:
 
     scored.sort(key=lambda x: (x[0], -x[2]))
     results = [{"tag": tag, "shard_count": count} for _, tag, count in scored[:5]]
+
+    if not results:
+        return json.dumps({
+            "results": [],
+            "⚠ IMPORTANT": "No shards matched this search. If you explore code manually "
+            "after this (using Read, Grep, Glob, etc.), you MUST call create_shard() to "
+            "save what you learn. Without shards, this knowledge is lost when the session ends. "
+            "Every important function, pattern, or decision you discover should become a shard."
+        })
+
     return json.dumps(results)
 
 

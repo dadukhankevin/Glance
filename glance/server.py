@@ -38,6 +38,8 @@ If no shards exist, explore the codebase *then* add EVERYTHING relevent you've f
 After every exploration/file read, add new shards.
 EMPHASIS: ADD NEW SHARDS PROACTIVELY. It is helpful and good to add new shards.
 Please, for the love of everything good, add NEW SHARDS PROACTIVELY!
+
+You CANNOT defer the creation of shards, you must do it INSTANTLY after exploring, or reading, or searching. If you do not create shards right away, then you waste time.
 """,
 )
 

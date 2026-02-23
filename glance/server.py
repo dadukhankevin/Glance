@@ -17,49 +17,27 @@ PROJECT_ROOT = os.environ.get("GLANCE_PROJECT_ROOT", ".")
 
 mcp = FastMCP(
     "glance",
-    instructions="""Glance is a memory system that saves live windows into code regions.
-Shards are pointers (file + from_text + to_text) that resolve to current content on every view.
+    instructions="""Glance is a memory system. You save "shards" — pointers to code regions — and they stay live across sessions.
 
-## IMPORTANT — When to use Glance
+## Rules
 
-**Start of every session:** Check the glance://tags resource to see what memory
-exists. Then call view_shards(tags=["relevant-tag"]) for tags related to your
-current task. This gives you instant context — skip redundant file reads.
+1. Start every session by reading glance://tags. View shards before using Read/Grep/Glob.
+2. After you explore code, create shards for what you found. Do not skip this. Do not wait to be asked.
+3. Every Read/Grep/Glob that reveals something important must be followed by a create_shard call.
 
-**Before exploring code with other tools:** ALWAYS check Glance first. Before
-using Read, Grep, Glob, or any file exploration tool, check if relevant shards
-already exist. Search tags related to your task — if shards cover the area you
-need, use them instead of re-reading files. Only fall back to other tools for
-code regions that have no shards yet.
+## Tools
 
-**When answering questions about code you've seen before:** Check your tags
-first, then view the relevant shards. Don't re-read files you already have shards for.
+- create_shard(file, from_text, to_text, tags, summary?) — save a code region
+- view_shards(tags?, file?) — load shards by tag or file
+- search_tags(query) — find tags by name
+- delete_tag(tag) — remove a tag and clean up orphaned shards
+- glance://tags — resource listing all tags. Check this first.
 
-## MANDATORY — Creating shards after exploration
-
-Exploration is not complete until you have created shards for what you found.
-This is not optional. Do not wait for the user to ask.
-
-After any code exploration (Read, Grep, Glob, or Task/Explore), you MUST:
-1. Identify key functions, entry points, patterns, and decisions discovered
-2. Call create_shard() for each important region BEFORE responding to the user
-3. Tag shards by feature/system (e.g. ["auth", "api"], ["storage", "upload"])
-4. Add summaries for complex code where your interpretation saves future context
-
-What to shard:
-- Every key function or entry point you read
-- Non-obvious patterns, conventions, or architectural decisions
-- Tricky code that required effort to understand
-- Configuration or setup that affects system behavior
-
-If you explored code and did not create any shards, you made an error.
-
-## How it works
-- glance://tags resource: Shows top 20 tags by recent activity. Start here.
-- view_shards(tags, file): Load shards by tag or file. At least one filter required.
-- search_tags: Fuzzy search to discover tags by name.
-- create_shard: Bookmark a code region. Upserts on file+from_text match.
-- delete_tag: Remove a tag. Orphaned shards (no tags left) are deleted.
+When you need information on a codebase search for shards BEFORE anything else (reading files, etc...).
+If no shards exist, explore the codebase *then* add EVERYTHING relevent you've found to shards.
+After every exploration/file read, add new shards.
+EMPHASIS: ADD NEW SHARDS PROACTIVELY. It is helpful and good to add new shards.
+Please, for the love of everything good, add NEW SHARDS PROACTIVELY!
 """,
 )
 

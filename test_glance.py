@@ -257,10 +257,187 @@ def test_end_to_end():
     print()
 
 
+def test_last_viewed():
+    """Test that last_viewed is tracked."""
+    print("=== Testing Last Viewed ===")
+
+    store = ShardStore(tmpdir)
+    # Clear existing shards
+    for s in store.get_all():
+        store.delete(s.id)
+
+    shard = Shard(
+        file="example.py",
+        anchor=ShardAnchor(from_text="def foo(", to_text="return bar"),
+        original_content="def foo():\n    return bar",
+        original_hash=Shard.hash_content("def foo():\n    return bar"),
+        tags=["test"],
+    )
+    shard, _ = store.upsert(shard)
+    assert shard.last_viewed is None, "last_viewed should be None initially"
+    print("  ✓ last_viewed is None on creation")
+
+    store.update_last_viewed([shard.id])
+    updated = store.get_all()[0]
+    assert updated.last_viewed is not None, "last_viewed should be set after update"
+    print(f"  ✓ last_viewed set to {updated.last_viewed}")
+
+    print()
+
+
+def test_search_tags():
+    """Test tag search."""
+    print("=== Testing Search Tags ===")
+
+    store = ShardStore(tmpdir)
+    # Clear existing shards
+    for s in store.get_all():
+        store.delete(s.id)
+
+    # Create shards with various tags
+    for i, tags in enumerate([["auth", "api"], ["auth", "middleware"], ["upload", "api"]]):
+        s = Shard(
+            file=f"file{i}.py",
+            anchor=ShardAnchor(from_text=f"def f{i}(", to_text=f"return {i}"),
+            original_content=f"content{i}",
+            original_hash=Shard.hash_content(f"content{i}"),
+            tags=tags,
+        )
+        store.upsert(s)
+
+    tag_map = store.get_all_tags()
+
+    # Exact match
+    assert "auth" in tag_map
+    assert len(tag_map["auth"]) == 2
+    print("  ✓ 'auth' has 2 shards")
+
+    assert "api" in tag_map
+    assert len(tag_map["api"]) == 2
+    print("  ✓ 'api' has 2 shards")
+
+    assert "upload" in tag_map
+    assert len(tag_map["upload"]) == 1
+    print("  ✓ 'upload' has 1 shard")
+
+    # Test search via server tool
+    from glance.server import search_tags
+    result = json.loads(search_tags("auth"))
+    assert len(result) == 1
+    assert result[0]["tag"] == "auth"
+    assert result[0]["shard_count"] == 2
+    print("  ✓ search_tags('auth') returns correct result")
+
+    # Substring match
+    result = json.loads(search_tags("api"))
+    assert any(r["tag"] == "api" for r in result)
+    print("  ✓ search_tags('api') finds 'api'")
+
+    # No match
+    result = json.loads(search_tags("nonexistent"))
+    assert len(result) == 0
+    print("  ✓ search_tags('nonexistent') returns empty")
+
+    print()
+
+
+def test_delete_tag():
+    """Test tag deletion and orphan cleanup."""
+    print("=== Testing Delete Tag ===")
+
+    store = ShardStore(tmpdir)
+    # Clear existing shards
+    for s in store.get_all():
+        store.delete(s.id)
+
+    # Create shards: one with multiple tags, one with single tag
+    multi = Shard(
+        file="multi.py",
+        anchor=ShardAnchor(from_text="def multi(", to_text="return multi"),
+        original_content="multi content",
+        original_hash=Shard.hash_content("multi content"),
+        tags=["shared", "keep"],
+    )
+    single = Shard(
+        file="single.py",
+        anchor=ShardAnchor(from_text="def single(", to_text="return single"),
+        original_content="single content",
+        original_hash=Shard.hash_content("single content"),
+        tags=["shared"],
+    )
+    store.upsert(multi)
+    store.upsert(single)
+    assert len(store.get_all()) == 2
+    print("  ✓ Created 2 shards")
+
+    # Delete 'shared' tag — should modify both, orphan-delete the single-tag one
+    modified, orphans = store.remove_tag("shared")
+    assert modified == 2, f"Expected 2 modified, got {modified}"
+    assert orphans == 1, f"Expected 1 orphan, got {orphans}"
+    print(f"  ✓ remove_tag('shared'): modified={modified}, orphans={orphans}")
+
+    remaining = store.get_all()
+    assert len(remaining) == 1, f"Expected 1 remaining, got {len(remaining)}"
+    assert remaining[0].tags == ["keep"]
+    print("  ✓ Only shard with remaining tags survives")
+
+    # Delete non-existent tag
+    from glance.server import delete_tag
+    result = json.loads(delete_tag("nonexistent"))
+    assert result["status"] == "not_found"
+    print("  ✓ delete_tag('nonexistent') returns not_found")
+
+    print()
+
+
+def test_tags_resource():
+    """Test the glance://tags resource."""
+    print("=== Testing Tags Resource ===")
+
+    store = ShardStore(tmpdir)
+    # Clear existing shards
+    for s in store.get_all():
+        store.delete(s.id)
+
+    # Create some shards with different tags and last_viewed
+    s1 = Shard(
+        file="a.py",
+        anchor=ShardAnchor(from_text="def a(", to_text="return a"),
+        original_content="a",
+        original_hash=Shard.hash_content("a"),
+        tags=["old-tag"],
+        last_viewed="2024-01-01T00:00:00+00:00",
+    )
+    s2 = Shard(
+        file="b.py",
+        anchor=ShardAnchor(from_text="def b(", to_text="return b"),
+        original_content="b",
+        original_hash=Shard.hash_content("b"),
+        tags=["recent-tag"],
+        last_viewed="2025-06-01T00:00:00+00:00",
+    )
+    store.upsert(s1)
+    store.upsert(s2)
+
+    from glance.server import tags_resource
+    result = json.loads(tags_resource())
+    assert len(result) == 2
+    # recent-tag should come first (more recent last_viewed)
+    assert result[0]["tag"] == "recent-tag"
+    assert result[1]["tag"] == "old-tag"
+    print("  ✓ Tags ranked by last_viewed (most recent first)")
+
+    print()
+
+
 if __name__ == "__main__":
     test_resolver()
     test_health()
     test_storage()
     test_end_to_end()
+    test_last_viewed()
+    test_search_tags()
+    test_delete_tag()
+    test_tags_resource()
     print("=" * 40)
     print("All tests passed! ✓")

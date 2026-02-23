@@ -17,21 +17,36 @@ PROJECT_ROOT = os.environ.get("GLANCE_PROJECT_ROOT", ".")
 
 mcp = FastMCP(
     "glance",
-    instructions="""Glance is a memory system that lets you save live windows into code.
+    instructions="""Glance is a memory system that saves live windows into code regions.
+Shards are pointers (file + from_text + to_text) that resolve to current content on every view.
 
-Instead of writing notes about code, you save "shards" — pointers to specific
-regions of files that resolve to live content every time you view them.
+## IMPORTANT — When to use Glance
 
-## Quick start
-1. While exploring code, use create_shard to bookmark important regions
-2. In later sessions, use view_shards to recall what you learned
-3. If shards have degraded, re-create them to refresh your memory
+**Start of every session:** Check the glance://tags resource to see what memory
+exists. Then call view_shards(tags=["relevant-tag"]) for tags related to your
+current task. This gives you instant context — skip redundant file reads.
+
+**While exploring code:** When you read something important, create a shard.
+If you'd want to remember it next session, shard it now. Good candidates:
+- Key functions, entry points, and core logic
+- Non-obvious patterns, conventions, or architectural decisions
+- Tricky code that required effort to understand
+
+**When answering questions about code you've seen before:** Check your tags
+first, then view the relevant shards. Don't re-read files you already have shards for.
+
+## How it works
+- glance://tags resource: Shows top 20 tags by recent activity. Start here.
+- view_shards(tags, file): Load shards by tag or file. At least one filter required.
+- search_tags: Fuzzy search to discover tags by name.
+- create_shard: Bookmark a code region. Upserts on file+from_text match.
+- delete_tag: Remove a tag. Orphaned shards (no tags left) are deleted.
 
 ## Tips
-- Use tags to organize shards by feature, system, or task
-- Add summaries for complex code where your interpretation is more useful than the raw code
+- Use tags to organize by feature, system, or task
+- Add summaries for complex code where your interpretation saves future context
 - Skip summaries when the code speaks for itself
-- When view_shards shows stale shards, either re-create them or let them expire
+- When view_shards shows stale shards, re-create them to refresh or let them expire
 """,
 )
 
@@ -124,6 +139,9 @@ def view_shards(
 ) -> str:
     """View memory shards with live content and health status.
 
+    You MUST provide at least one filter (tags or file). Use the glance://tags
+    resource to discover available tags, then drill into specific ones.
+
     By default, shards with summaries show the summary (not raw code) to save
     context. Use raw=True to bypass summaries and see actual file content.
 
@@ -135,21 +153,26 @@ def view_shards(
     - Ignore them and they'll be deleted after a few more views
 
     Args:
-        tags: Filter shards by tags (returns shards matching ANY tag). If None, returns all shards.
+        tags: Filter shards by tags (returns shards matching ANY tag).
         file: Filter shards by file path. Can be combined with tags.
         raw: If True, show raw file content instead of summaries for all shards.
     """
+    # Require at least one filter
+    if not tags and not file:
+        return json.dumps({
+            "error": "Provide at least one filter (tags or file). "
+            "Use search_tags() or the glance://tags resource to discover available tags."
+        })
+
     # Gather matching shards
     if tags:
         shards = store.get_by_tags(tags)
         if file:
             file_path = _resolve_file_path(file)
             shards = [s for s in shards if s.file == file or _resolve_file_path(s.file) == file_path]
-    elif file:
+    else:
         file_path = _resolve_file_path(file)
         shards = store.get_by_file(file) or store.get_by_file(file_path)
-    else:
-        shards = store.get_all()
 
     if not shards:
         filter_desc = []
@@ -211,6 +234,11 @@ def view_shards(
 
         results.append(entry)
 
+    # Track last_viewed for all viewed shards (excluding ones about to be deleted)
+    viewed_ids = [s.id for s in shards if s.id not in set(to_delete_now)]
+    if viewed_ids:
+        store.update_last_viewed(viewed_ids)
+
     # Delete expired shards
     if to_delete_now:
         store.delete_many(to_delete_now)
@@ -232,6 +260,72 @@ def view_shards(
         )
 
     return json.dumps(response, indent=2)
+
+
+@mcp.tool()
+def search_tags(query: str) -> str:
+    """Search for tags by name (fuzzy substring match).
+
+    Returns up to 5 matching tags with shard counts, sorted by relevance.
+    Use this to discover what tags exist before querying shards.
+
+    Args:
+        query: Search string to match against tag names.
+    """
+    query_lower = query.lower()
+    tag_map = store.get_all_tags()
+
+    scored = []
+    for tag, shards in tag_map.items():
+        tag_lower = tag.lower()
+        if query_lower in tag_lower:
+            # Exact match scores highest, then prefix, then substring
+            if tag_lower == query_lower:
+                score = 0
+            elif tag_lower.startswith(query_lower):
+                score = 1
+            else:
+                score = 2
+            scored.append((score, tag, len(shards)))
+
+    scored.sort(key=lambda x: (x[0], -x[2]))
+    results = [{"tag": tag, "shard_count": count} for _, tag, count in scored[:5]]
+    return json.dumps(results)
+
+
+@mcp.tool()
+def delete_tag(tag: str) -> str:
+    """Remove a tag from all shards. Shards left with no tags are deleted.
+
+    Args:
+        tag: The tag to remove.
+    """
+    modified, orphans = store.remove_tag(tag)
+    if modified == 0:
+        return json.dumps({"status": "not_found", "message": f"No shards have tag '{tag}'"})
+    return json.dumps({
+        "status": "ok",
+        "tag": tag,
+        "shards_modified": modified,
+        "orphans_deleted": orphans,
+    })
+
+
+@mcp.resource("glance://tags")
+def tags_resource() -> str:
+    """Top tags ranked by most recent view activity."""
+    tag_map = store.get_all_tags()
+
+    def _rank_key(shards: list) -> str:
+        """Return the most recent last_viewed (or updated_at) across shards."""
+        timestamps = []
+        for s in shards:
+            timestamps.append(s.last_viewed or s.updated_at)
+        return max(timestamps) if timestamps else ""
+
+    ranked = sorted(tag_map.items(), key=lambda item: _rank_key(item[1]), reverse=True)
+    results = [{"tag": tag, "shard_count": len(shards)} for tag, shards in ranked[:20]]
+    return json.dumps(results)
 
 
 def _resolve_file_path(file: str) -> str:

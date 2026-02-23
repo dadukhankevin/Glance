@@ -107,3 +107,40 @@ class ShardStore:
         shards = [s for s in shards if s.id not in id_set]
         self._write_shards(shards)
         return original_len - len(shards)
+
+    def update_last_viewed(self, shard_ids: list[str]):
+        """Set last_viewed to now for the given shard IDs."""
+        now = datetime.now(timezone.utc).isoformat()
+        shards = self._read_shards()
+        id_set = set(shard_ids)
+        for s in shards:
+            if s.id in id_set:
+                s.last_viewed = now
+        self._write_shards(shards)
+
+    def remove_tag(self, tag: str) -> tuple[int, int]:
+        """Remove a tag from all shards. Deletes orphaned shards (no tags left).
+        Returns (shards_modified, orphans_deleted)."""
+        shards = self._read_shards()
+        modified = 0
+        orphans = 0
+        surviving = []
+        for s in shards:
+            if tag in s.tags:
+                s.tags = [t for t in s.tags if t != tag]
+                modified += 1
+                if not s.tags:
+                    orphans += 1
+                    continue  # skip adding to surviving
+            surviving.append(s)
+        self._write_shards(surviving)
+        return modified, orphans
+
+    def get_all_tags(self) -> dict[str, list[Shard]]:
+        """Return a dict mapping each tag to its shards."""
+        shards = self._read_shards()
+        tags: dict[str, list[Shard]] = {}
+        for s in shards:
+            for t in s.tags:
+                tags.setdefault(t, []).append(s)
+        return tags

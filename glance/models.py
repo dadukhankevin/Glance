@@ -36,6 +36,7 @@ class Shard(BaseModel):
     updated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    last_viewed: Optional[str] = None
     # How many times this shard has been viewed while unhealthy
     stale_views: int = 0
 

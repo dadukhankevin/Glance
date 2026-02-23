@@ -17,6 +17,12 @@ Agent memory today is basically "write yourself READMEs." These go stale immedia
 - **Summary**: Optional compressed representation. Shown instead of raw code when healthy. Bypassed automatically when the underlying code has changed.
 - **Health**: Similarity between original and current content. Healthy shards are trusted. Degraded shards show raw content. Stale shards get deleted.
 
+## Agent Workflow
+
+1. **Start of session**: Check `glance://tags` resource to see what memory exists. Load relevant tags with `view_shards(tags=["..."])`.
+2. **While exploring**: Create shards for important code — key functions, tricky logic, architectural decisions.
+3. **When answering questions**: Check tags first, then view relevant shards. Don't re-read files you already have shards for.
+
 ## MCP Tools
 
 ### `create_shard(file, from_text, to_text, tags, summary?)`
@@ -35,7 +41,7 @@ create_shard(
 
 ### `view_shards(tags?, file?, raw?)`
 
-Load matching shards with live content and health status.
+Load shards filtered by tag or file. **At least one filter is required** — use the `glance://tags` resource or `search_tags()` to discover available tags first.
 
 ```
 view_shards(tags=["auth"])           # See all auth-related shards
@@ -43,48 +49,76 @@ view_shards(file="src/api/routes.py") # See all shards in a file
 view_shards(tags=["auth"], raw=True)  # Bypass summaries, see raw code
 ```
 
+### `search_tags(query)`
+
+Fuzzy substring search on tag names. Returns up to 5 matching tags with shard counts.
+
+```
+search_tags("auth")  # → [{"tag": "auth", "shard_count": 3}]
+```
+
+### `delete_tag(tag)`
+
+Remove a tag from all shards. Shards left with no tags are deleted (orphan cleanup).
+
+```
+delete_tag("old-feature")  # → {"shards_modified": 4, "orphans_deleted": 1}
+```
+
+### Resource: `glance://tags`
+
+Auto-loaded context listing the top 20 tags ranked by most recent view activity. This is the starting point for agents — check it at the beginning of each session to see what memory is available.
+
 ## Health Lifecycle
 
-1. **Healthy** (score ≥ 0.8): Code is unchanged or minimally edited. Summary is trusted.
-2. **Degraded** (0.4–0.8): Notable changes. Summary is bypassed, raw content shown.
+1. **Healthy** (score >= 0.8): Code is unchanged or minimally edited. Summary is trusted.
+2. **Degraded** (0.4-0.8): Notable changes. Summary is bypassed, raw content shown.
 3. **Stale** (score < 0.4): Major changes. Flagged for deletion unless re-created.
 4. **Expired**: Stale and viewed multiple times without refresh. Automatically deleted.
 
 ## Installation
 
 ```bash
-# Install from source
-pip install -e .
-
-# Or install with uv
-uv pip install -e .
+pipx install -e .
 ```
 
-## Configuration
+This installs Glance globally in an isolated environment. The `-e` flag makes it editable, so changes to the source take effect immediately.
 
-Set the project root via environment variable:
+### Claude Code (global — all projects)
 
-```bash
-export GLANCE_PROJECT_ROOT=/path/to/your/project
-```
-
-Defaults to the current working directory.
-
-### Claude Code (`claude_code_config.json`)
+Add glance to `~/.claude.json`. Glance automatically uses the working directory as the project root, so no per-project configuration is needed.
 
 ```json
 {
   "mcpServers": {
     "glance": {
-      "command": "python",
-      "args": ["-m", "glance"],
-      "env": {
-        "GLANCE_PROJECT_ROOT": "/path/to/your/project"
-      }
+      "type": "stdio",
+      "command": "glance",
+      "args": []
     }
   }
 }
 ```
+
+Or add it programmatically:
+
+```bash
+python3 -c "
+import json, os
+config_path = os.path.expanduser('~/.claude.json')
+with open(config_path, 'r') as f:
+    data = json.load(f)
+data['mcpServers']['glance'] = {
+    'type': 'stdio',
+    'command': 'glance',
+    'args': []
+}
+with open(config_path, 'w') as f:
+    json.dump(data, f, indent=2)
+"
+```
+
+Restart Claude Code after adding. Run `/mcp` to verify it shows as connected.
 
 ### Claude Desktop (`claude_desktop_config.json`)
 
@@ -92,15 +126,18 @@ Defaults to the current working directory.
 {
   "mcpServers": {
     "glance": {
-      "command": "python",
-      "args": ["-m", "glance"],
-      "env": {
-        "GLANCE_PROJECT_ROOT": "/path/to/your/project"
-      }
+      "command": "glance",
+      "args": []
     }
   }
 }
 ```
+
+### Notes
+
+- Glance uses the working directory as the project root by default. Override with `GLANCE_PROJECT_ROOT` env var if needed.
+- If your client doesn't have `~/.local/bin` on `PATH`, use the full path from `which glance`.
+- Restart your client after adding the config.
 
 ## Storage
 
@@ -108,7 +145,7 @@ Shards are stored in `.glance/shards.json` in the project root. This directory i
 
 ## Design Principles
 
-- **Two tools, not twenty.** `create_shard` and `view_shards` are the entire API.
+- **Small surface area.** Four tools and one resource. Create, view, search, delete.
 - **Live by default.** Shards always resolve to current file content, never cached copies.
 - **Graceful degradation.** When code changes, summaries are bypassed, content is shown raw, and stale shards expire on their own.
 - **Upsert, not CRUD.** Re-creating a shard refreshes it. No explicit update/delete needed.

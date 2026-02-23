@@ -82,10 +82,8 @@ Auto-loaded context listing the top 20 tags ranked by most recent view activity.
 ## Installation
 
 ```bash
-pipx install -e .
+pip install -e .
 ```
-
-This installs Glance globally in an isolated environment. The `-e` flag makes it editable, so changes to the source take effect immediately.
 
 ### Claude Code (global — all projects)
 

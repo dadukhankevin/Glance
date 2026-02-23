@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "glance-memory"
+version = "0.1.0"
+description = "Live memory shards for AI agents — code pointers that stay fresh"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.scripts]
+glance = "glance.__main__:mcp.run"

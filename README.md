@@ -39,14 +39,17 @@ create_shard(
 )
 ```
 
-### `view_shards(tags?, file?, raw?)`
+### `view_shards(tags?, file?, raw?, limit?, offset?)`
 
 Load shards filtered by tag or file. **At least one filter is required** — use the `glance://tags` resource or `search_tags()` to discover available tags first.
 
+Shards are returned oldest-first so the most recent context is closest to the LLM's next response. Returns up to 50 shards by default; use `offset` to page through more.
+
 ```
-view_shards(tags=["auth"])           # See all auth-related shards
-view_shards(file="src/api/routes.py") # See all shards in a file
-view_shards(tags=["auth"], raw=True)  # Bypass summaries, see raw code
+view_shards(tags=["auth"])              # See all auth-related shards
+view_shards(file="src/api/routes.py")   # See all shards in a file
+view_shards(tags=["auth"], raw=True)    # Bypass summaries, see raw code
+view_shards(tags=["api"], offset=50)    # Page through older shards
 ```
 
 ### `search_tags(query)`

@@ -8,8 +8,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-class ShardAnchor(BaseModel):
-    """How a shard is anchored in a file."""
+class InsightAnchor(BaseModel):
+    """How an insight is anchored in a file."""
 
     from_text: str
     to_text: str
@@ -20,15 +20,14 @@ class ShardAnchor(BaseModel):
     end_line: Optional[int] = None
 
 
-class Shard(BaseModel):
-    """A single memory shard — a live window into a code region."""
+class Insight(BaseModel):
+    """A single insight — a live window into a code region."""
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     file: str
-    anchor: ShardAnchor
+    anchor: InsightAnchor
     original_content: str
     original_hash: str
-    summary: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -37,7 +36,7 @@ class Shard(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     last_viewed: Optional[str] = None
-    # How many times this shard has been viewed while unhealthy
+    # How many times this insight has been viewed while unhealthy
     stale_views: int = 0
 
     @staticmethod
@@ -45,5 +44,5 @@ class Shard(BaseModel):
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     def matches_region(self, file: str, from_text: str) -> bool:
-        """Check if this shard points at the same region (for upsert logic)."""
+        """Check if this insight points at the same region (for upsert logic)."""
         return self.file == file and self.anchor.from_text == from_text

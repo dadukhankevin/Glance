@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from .models import Shard, ShardAnchor
+from .models import Insight, InsightAnchor
 
 STORAGE_DIR = ".glance"
-STORAGE_FILE = "shards.json"
+STORAGE_FILE = "insights.json"
 
 
-class ShardStore:
-    """Persists shards to a JSON file in the project directory."""
+class InsightStore:
+    """Persists insights to a JSON file in the project directory."""
 
     def __init__(self, project_root: str = "."):
         self.root = Path(project_root)
@@ -23,109 +23,109 @@ class ShardStore:
     def _ensure_storage(self):
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         if not self.storage_file.exists():
-            self._write_shards([])
+            self._write_insights([])
         # Add .glance to .gitignore if it exists
         gitignore = self.root / ".gitignore"
         if gitignore.exists():
             content = gitignore.read_text()
             if ".glance" not in content:
                 with open(gitignore, "a") as f:
-                    f.write("\n# Glance memory shards\n.glance/\n")
+                    f.write("\n# Glance memory\n.glance/\n")
 
-    def _read_shards(self) -> list[Shard]:
+    def _read_insights(self) -> list[Insight]:
         try:
             data = json.loads(self.storage_file.read_text())
-            return [Shard(**s) for s in data]
+            return [Insight(**s) for s in data]
         except (json.JSONDecodeError, FileNotFoundError):
             return []
 
-    def _write_shards(self, shards: list[Shard]):
-        data = [s.model_dump() for s in shards]
+    def _write_insights(self, insights: list[Insight]):
+        data = [s.model_dump() for s in insights]
         self.storage_file.write_text(json.dumps(data, indent=2))
 
-    def upsert(self, shard: Shard) -> tuple[Shard, bool]:
+    def upsert(self, insight: Insight) -> tuple[Insight, bool]:
         """
-        Insert or update a shard. If a shard with the same file+from_text
+        Insert or update an insight. If an insight with the same file+from_text
         exists, overwrite it (preserving the original ID).
-        Returns (shard, was_update).
+        Returns (insight, was_update).
         """
-        shards = self._read_shards()
-        for i, existing in enumerate(shards):
-            if existing.matches_region(shard.file, shard.anchor.from_text):
+        insights = self._read_insights()
+        for i, existing in enumerate(insights):
+            if existing.matches_region(insight.file, insight.anchor.from_text):
                 # Upsert: keep ID, update everything else
-                shard.id = existing.id
-                shard.created_at = existing.created_at
-                shard.updated_at = datetime.now(timezone.utc).isoformat()
-                shard.stale_views = 0  # Reset on re-creation
-                shards[i] = shard
-                self._write_shards(shards)
-                return shard, True
+                insight.id = existing.id
+                insight.created_at = existing.created_at
+                insight.updated_at = datetime.now(timezone.utc).isoformat()
+                insight.stale_views = 0  # Reset on re-creation
+                insights[i] = insight
+                self._write_insights(insights)
+                return insight, True
 
-        # New shard
-        shards.append(shard)
-        self._write_shards(shards)
-        return shard, False
+        # New insight
+        insights.append(insight)
+        self._write_insights(insights)
+        return insight, False
 
-    def get_by_tags(self, tags: list[str]) -> list[Shard]:
-        """Get all shards matching ANY of the given tags."""
-        shards = self._read_shards()
+    def get_by_tags(self, tags: list[str]) -> list[Insight]:
+        """Get all insights matching ANY of the given tags."""
+        insights = self._read_insights()
         if not tags:
-            return shards
+            return insights
         tag_set = set(tags)
-        return [s for s in shards if tag_set.intersection(s.tags)]
+        return [s for s in insights if tag_set.intersection(s.tags)]
 
-    def get_by_file(self, file: str) -> list[Shard]:
-        """Get all shards for a specific file."""
-        shards = self._read_shards()
-        return [s for s in shards if s.file == file]
+    def get_by_file(self, file: str) -> list[Insight]:
+        """Get all insights for a specific file."""
+        insights = self._read_insights()
+        return [s for s in insights if s.file == file]
 
-    def get_all(self) -> list[Shard]:
-        return self._read_shards()
+    def get_all(self) -> list[Insight]:
+        return self._read_insights()
 
-    def increment_stale_views(self, shard_id: str):
-        """Increment the stale view counter for a shard."""
-        shards = self._read_shards()
-        for s in shards:
-            if s.id == shard_id:
+    def increment_stale_views(self, insight_id: str):
+        """Increment the stale view counter for an insight."""
+        insights = self._read_insights()
+        for s in insights:
+            if s.id == insight_id:
                 s.stale_views += 1
                 break
-        self._write_shards(shards)
+        self._write_insights(insights)
 
-    def delete(self, shard_id: str) -> bool:
-        """Delete a shard by ID."""
-        shards = self._read_shards()
-        original_len = len(shards)
-        shards = [s for s in shards if s.id != shard_id]
-        self._write_shards(shards)
-        return len(shards) < original_len
+    def delete(self, insight_id: str) -> bool:
+        """Delete an insight by ID."""
+        insights = self._read_insights()
+        original_len = len(insights)
+        insights = [s for s in insights if s.id != insight_id]
+        self._write_insights(insights)
+        return len(insights) < original_len
 
-    def delete_many(self, shard_ids: list[str]) -> int:
-        """Delete multiple shards. Returns count deleted."""
-        shards = self._read_shards()
-        id_set = set(shard_ids)
-        original_len = len(shards)
-        shards = [s for s in shards if s.id not in id_set]
-        self._write_shards(shards)
-        return original_len - len(shards)
+    def delete_many(self, insight_ids: list[str]) -> int:
+        """Delete multiple insights. Returns count deleted."""
+        insights = self._read_insights()
+        id_set = set(insight_ids)
+        original_len = len(insights)
+        insights = [s for s in insights if s.id not in id_set]
+        self._write_insights(insights)
+        return original_len - len(insights)
 
-    def update_last_viewed(self, shard_ids: list[str]):
-        """Set last_viewed to now for the given shard IDs."""
+    def update_last_viewed(self, insight_ids: list[str]):
+        """Set last_viewed to now for the given insight IDs."""
         now = datetime.now(timezone.utc).isoformat()
-        shards = self._read_shards()
-        id_set = set(shard_ids)
-        for s in shards:
+        insights = self._read_insights()
+        id_set = set(insight_ids)
+        for s in insights:
             if s.id in id_set:
                 s.last_viewed = now
-        self._write_shards(shards)
+        self._write_insights(insights)
 
     def remove_tag(self, tag: str) -> tuple[int, int]:
-        """Remove a tag from all shards. Deletes orphaned shards (no tags left).
-        Returns (shards_modified, orphans_deleted)."""
-        shards = self._read_shards()
+        """Remove a tag from all insights. Deletes orphaned insights (no tags left).
+        Returns (insights_modified, orphans_deleted)."""
+        insights = self._read_insights()
         modified = 0
         orphans = 0
         surviving = []
-        for s in shards:
+        for s in insights:
             if tag in s.tags:
                 s.tags = [t for t in s.tags if t != tag]
                 modified += 1
@@ -133,14 +133,14 @@ class ShardStore:
                     orphans += 1
                     continue  # skip adding to surviving
             surviving.append(s)
-        self._write_shards(surviving)
+        self._write_insights(surviving)
         return modified, orphans
 
-    def get_all_tags(self) -> dict[str, list[Shard]]:
-        """Return a dict mapping each tag to its shards."""
-        shards = self._read_shards()
-        tags: dict[str, list[Shard]] = {}
-        for s in shards:
+    def get_all_tags(self) -> dict[str, list[Insight]]:
+        """Return a dict mapping each tag to its insights."""
+        insights = self._read_insights()
+        tags: dict[str, list[Insight]] = {}
+        for s in insights:
             for t in s.tags:
                 tags.setdefault(t, []).append(s)
         return tags
